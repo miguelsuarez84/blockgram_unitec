@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#17172b">
+  <title>Blockgram | Cuaderno de programación</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/xml/xml.min.js"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/css/css.min.js"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/htmlmixed/htmlmixed.min.js"></script>
+  <link rel="stylesheet" href="proyecto.css">
+  <script src="auth.js" defer></script>
+  <script src="proyecto.js" defer></script>
+</head>
+<body>
+  <main id="authScreen" class="auth-screen">
+    <form id="authForm" class="auth-card">
+      <a class="brand auth-brand" href="#" aria-label="Blockgram">
+        <span class="brand-mark" aria-hidden="true">B</span>
+        <span class="brand-wordmark">Blockgram</span>
+      </a>
+      <p class="eyebrow">TU CUADERNO, EN CUALQUIER DISPOSITIVO</p>
+      <h1 id="authTitle">Inicia sesión</h1>
+      <p id="authDescription" class="auth-description">Entra con tu usuario y contraseña para acceder a tus notas.</p>
+      <label class="field-label">Usuario
+        <input id="authUsername" name="username" type="text" minlength="3" maxlength="30" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+      </label>
+      <label class="field-label">Contraseña
+        <input id="authPassword" name="password" type="password" minlength="10" maxlength="128" autocomplete="current-password" required>
+      </label>
+      <p id="authMessage" class="auth-message" role="alert" aria-live="polite"></p>
+      <button id="authSubmit" class="primary-button auth-submit" type="submit">Iniciar sesión</button>
+      <button id="toggleAuthMode" class="auth-toggle" type="button">¿No tienes cuenta? Regístrate</button>
+      <p class="auth-footnote">Solo usuario y contraseña. No hay recuperación por correo; guarda tu contraseña en un lugar seguro.</p>
+    </form>
+  </main>
+  <div class="app-shell" id="appShell" hidden>
+    <aside class="sidebar">
+      <a class="brand" href="#" aria-label="Blockgram, inicio">
+        <span class="brand-mark" aria-hidden="true">B</span>
+        <span class="brand-wordmark">Blockgram</span>
+      </a>
+      <div class="workspace-label">CUADERNO DE CÓDIGO</div>
+      <nav class="side-nav" aria-label="Navegación principal">
+        <a class="nav-link active" href="#inicio" data-view="dashboard"><span class="nav-icon">▦</span>Panel principal</a>
+        <a class="nav-link" href="#notas" data-view="notes"><span class="nav-icon">▤</span>Notas y snippets</a>
+        <a class="nav-link" href="#projectWorkspace" data-view="projects"><span class="nav-icon">☑</span>Proyectos y tareas</a>
+        <a class="nav-link" href="#horario" data-view="dashboard"><span class="nav-icon">◷</span>Horario</a>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="focus-card">
+          <div class="focus-icon">✳</div>
+          <strong>Un paso a la vez</strong>
+          <p>El progreso real se construye con pequeñas sesiones.</p>
+        </div>
+        <div class="data-controls">
+          <button type="button" class="export-button" id="exportData" title="Exportar datos" aria-label="Exportar datos"><span aria-hidden="true">📥</span><span class="data-control-label">Exportar</span></button>
+          <button type="button" class="import-button" id="importData" title="Importar datos" aria-label="Importar datos"><span aria-hidden="true">📤</span><span class="data-control-label">Importar</span></button>
+          <input type="file" id="importFile" accept=".json" hidden>
+        </div>
+      </div>
+    </aside>
+
+    <main id="inicio" class="main-content mockup-page">
+      <section id="notesWorkspaceView" class="notes-workspace-view">
+        <header class="notes-workspace-header">
+          <div>
+            <p class="eyebrow">TU ESPACIO PERSONAL</p>
+            <h1>Notas <span>y código</span></h1>
+            <p class="notes-workspace-subtitle">Guarda apuntes, snippets y ejemplos de programación por lenguaje.</p>
+          </div>
+          <button type="button" class="notes-back-button" id="backToDashboard">Volver al panel <span>↗</span></button>
+        </header>
+        <div class="notes-app-layout">
+          <aside class="notes-browser panel">
+            <div class="notes-browser-top">
+              <div><p class="eyebrow">BIBLIOTECA</p><h2>Todas las notas <span id="workspaceNoteCount">0</span></h2></div>
+              <button type="button" class="notes-create-button" id="createWorkspaceNote" aria-label="Crear nota nueva">＋</button>
+            </div>
+            <label class="notes-search"><span aria-hidden="true">⌕</span><input id="workspaceNoteSearch" type="search" placeholder="Buscar por título o contenido..." autocomplete="off"></label>
+            <div class="notes-browser-caption"><span>RECIENTES</span><button type="button" id="workspaceSortNotes" title="Cambiar orden">↕</button></div>
+            <div id="workspaceNoteList" class="workspace-note-list"></div>
+            <div class="notes-browser-footer"><span class="saved-indicator"></span><span id="workspaceSaveStatus">Guardado en este dispositivo</span></div>
+          </aside>
+          <section class="notes-writing panel" aria-label="Editor de nota">
+            <div id="workspaceEmptyState" class="workspace-empty-state">
+              <div class="empty-icon">▤</div>
+              <h2>Un espacio para tus ideas</h2>
+              <p>Crea una nota nueva o busca una existente por su título.</p>
+              <button type="button" class="primary-button" id="emptyCreateWorkspaceNote"><span>＋</span> Crear nota</button>
+            </div>
+            <div id="workspaceEditor" class="workspace-editor" hidden>
+              <div class="workspace-editor-toolbar">
+                <span class="editor-save-state" id="editorSaveState">Guardado</span>
+                <button type="button" class="delete-workspace-note" id="deleteWorkspaceNote">Eliminar nota</button>
+              </div>
+              <input id="workspaceNoteTitle" class="workspace-note-title" type="text" maxlength="100" placeholder="Título de la nota" aria-label="Título de la nota">
+              <div class="workspace-note-meta">
+                <span id="workspaceNoteDate"></span>
+                <label class="linked-topic"><span>Vincular a</span><input id="workspaceNoteLink" type="text" maxlength="100" placeholder="Proyecto o tema"></label>
+                <div id="connectionIndicators" class="connection-indicators"></div>
+              </div>
+              <div class="workspace-note-divider"></div>
+              <div class="code-editor-toolbar">
+                <label class="code-language-select">Lenguaje
+                  <select id="workspaceNoteLanguage" aria-label="Lenguaje de la nota">
+                    <option value="auto">Detectar automáticamente</option>
+                    <option value="python">Python</option>
+                    <option value="javascript">JavaScript</option>
+                    <option value="html">HTML</option>
+                    <option value="css">CSS</option>
+                    <option value="json">JSON</option>
+                    <option value="text">Texto</option>
+                  </select>
+                </label>
+                <span id="workspaceLanguageTag" class="language-tag">Texto</span>
+              </div>
+              <p class="code-editor-hint" id="codeEditorHint">El lenguaje se detecta al escribir. Puedes cambiarlo manualmente.</p>
+              <p class="code-execution-notice" role="note">La ejecución de código está desactivada temporalmente hasta contar con un entorno aislado.</p>
+              <textarea id="workspaceNoteContent" class="workspace-note-content" placeholder="Empieza a escribir aquí...&#10;&#10;Puedes añadir ideas, apuntes, código o detalles que quieras encontrar después." aria-label="Contenido de la nota"></textarea>
+              <section class="note-attachments" aria-label="Archivos adjuntos de la nota">
+                <div class="attachment-heading">
+                  <div><strong>Material de la nota</strong><small>Imágenes, PDF, documentos o código · máximo 20 MB por archivo</small></div>
+                  <button type="button" class="attachment-add-button" id="addNoteAttachment">＋ Adjuntar</button>
+                </div>
+                <input id="noteAttachmentInput" type="file" multiple accept="image/*,.pdf,.doc,.docx,.odt,.ppt,.pptx,.xls,.xlsx,.txt,.md,.csv,.rtf,.py,.js,.mjs,.jsx,.ts,.tsx,.html,.css,.json,.java,.c,.h,.cpp,.cs,.go,.rs,.sql,.xml,.yaml,.yml,.toml,.ipynb,.sh,.ps1,.bat,.php,.rb,.kt,.swift,.dart,.r,.log,.ini,.zip" hidden>
+                <p id="noteAttachmentsEmpty" class="attachments-empty">Aún no hay archivos adjuntos a esta nota.</p>
+                <div id="noteAttachmentsList" class="note-attachments-list"></div>
+              </section>
+              <div class="workspace-editor-footer"><span>Los cambios se guardan automáticamente.</span><span id="workspaceNoteCharacters">0 caracteres</span></div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <header class="mockup-header">
+        <div class="mockup-title">
+          <p class="eyebrow">TU CUADERNO DE PROGRAMACIÓN</p>
+          <h1>Blockgram</h1>
+          <p class="mockup-subtitle">Aprende, escribe y organiza código.</p>
+        </div>
+        <div class="mockup-search" role="search">
+          <span class="search-symbol" aria-hidden="true">⌕</span>
+          <input type="search" id="globalNoteSearch" aria-label="Buscar notas" placeholder="Buscar notas, ideas o tareas..." autocomplete="off">
+          <div class="global-search-results" id="globalNoteSearchResults" role="listbox" aria-label="Notas encontradas" hidden></div>
+          <button type="button" class="search-add" id="openNotesAndCreate" aria-label="Abrir notas y crear nota" title="Abrir notas y crear nota">＋</button>
+          <button type="button" class="search-delete" id="clearGlobalNoteSearch" aria-label="Limpiar búsqueda" title="Limpiar búsqueda">⌫</button>
+        </div>
+        <div class="streak-badge">
+          <span class="streak-icon">✦</span>
+          <span><small>RACHA DE AVANCE</small><strong><span id="streakCount">0</span> <em id="streakUnit">días</em></strong></span>
+        </div>
+        <div class="account-controls">
+          <span>Cuenta: <strong id="accountUsername"></strong><small id="accountSyncStatus" role="status">Sincronizado</small></span>
+          <button type="button" id="logoutButton">Cerrar sesión</button>
+        </div>
+      </header>
+      <section id="syncConflictPanel" class="sync-conflict-panel" role="alert" hidden>
+        <strong>Hay cambios distintos en otro dispositivo</strong>
+        <p>Ambas versiones se conservaron. Elige cuál guardar en la cuenta o descarga las dos para compararlas.</p>
+        <div>
+          <button type="button" id="keepLocalSyncConflict">Conservar mi versión</button>
+          <button type="button" id="keepRemoteSyncConflict">Usar versión de la cuenta</button>
+          <button type="button" id="exportSyncConflict">Descargar ambas</button>
+        </div>
+      </section>
+
+      <div class="mockup-layout">
+        <aside class="quick-notes panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">CAPTURAS RÁPIDAS</p><h2>Mis notas</h2></div>
+            <span class="notes-total" id="dashboardNotesCount">0</span>
+          </div>
+          <div class="quick-note-list" id="dashboardRecentNotes">
+            <p class="recent-notes-empty">Las notas recientes que crees aparecerán aquí.</p>
+          </div>
+          <button type="button" class="all-notes" id="openAllNotes">Ver todas las notas <span>→</span></button>
+        </aside>
+
+        <div class="mockup-main">
+          <div class="data-goals-grid">
+            <section class="panel data-panel">
+              <div class="panel-heading">
+                <div><p class="eyebrow">RESUMEN DEL PROYECTO</p><h2>Datos</h2></div>
+                <button type="button" class="subtle-icon" id="openProjectsFromData">Ver proyectos&nbsp; →</button>
+              </div>
+              <div class="project-identity">
+                <span class="project-avatar" id="dashboardProjectIcon">✳</span>
+                <div><strong id="dashboardProjectName">Aún no hay proyectos</strong><span id="dashboardProjectType">Crea un proyecto, tarea o examen para empezar</span></div>
+                <span class="priority-badge" id="dashboardProjectPriority">—</span>
+              </div>
+              <div class="data-stats">
+                <div class="data-stat"><span>TAREAS</span><strong id="dashboardTaskCount">0 de 0 completadas</strong></div>
+                <div class="data-stat"><span>TIEMPO RESTANTE</span><strong id="dashboardTimeRemaining">—</strong></div>
+                <div class="data-stat"><span>HORAS DEDICADAS</span><strong id="dashboardHoursSpent">0 min</strong></div>
+              </div>
+              <div class="data-progress">
+                <div><span>Progreso por tareas completadas</span><strong id="dashboardProjectProgress">0%</strong></div>
+                <div class="progress-track"><div class="progress-fill" id="dashboardProjectProgressBar" style="width:0%"></div></div>
+              </div>
+              <div class="data-footer"><span id="dashboardStudyPlan">Crea un plan para ver el tiempo recomendado.</span><button type="button" id="openProjectDetails">Ver plan&nbsp; ↗</button></div>
+            </section>
+
+            <section class="panel goals-panel" id="tareas">
+              <div class="panel-heading">
+                <div><p class="eyebrow">LO QUE QUIERES LOGRAR</p><h2>Metas</h2></div>
+                <button type="button" class="text-button" id="createProjectFromGoals">＋ Nuevo proyecto</button>
+              </div>
+              <div class="goal-summary"><strong id="dashboardGoalsLabel">Tu plan de estudio</strong><span id="dashboardGoalsCount">0 de 0 completadas</span></div>
+              <div class="goal-progress"><span id="dashboardGoalsProgress" style="width:0%"></span></div>
+              <ul class="goal-list" id="dashboardGoalsList"><li class="goal-empty">Tus tareas del proyecto aparecerán aquí.</li></ul>
+            </section>
+          </div>
+
+          <div class="lower-panels">
+            <section class="panel weekly-panel" id="horario">
+              <div class="panel-heading">
+                <div><p class="eyebrow">ORGANIZA TU TIEMPO</p><h2>Horario</h2></div>
+                <div class="calendar-navigation">
+                <button type="button" class="subtle-icon" id="previousMonth" aria-label="Mes anterior">‹</button>
+                <button type="button" class="subtle-icon" id="nextMonth" aria-label="Mes siguiente">›</button>
+                </div>
+              </div>
+              <div class="week-heading"><span id="monthLabel">Mes actual</span><button type="button" id="currentMonthButton">Ir a hoy</button></div>
+              <div class="month-calendar" role="grid" aria-label="Calendario mensual">
+              <div class="month-weekdays" role="row">
+                <span role="columnheader">Dom</span><span role="columnheader">Lun</span><span role="columnheader">Mar</span>
+                <span role="columnheader">Mié</span><span role="columnheader">Jue</span><span role="columnheader">Vie</span><span role="columnheader">Sáb</span>
+              </div>
+              <div class="month-grid" id="monthGrid" role="rowgroup"></div>
+              </div>
+              <div class="schedule-preview">
+              <div class="schedule-agenda-heading"><strong id="agendaDateLabel">Agenda del día</strong><span id="agendaEventCount">0 entregas</span></div>
+              <div id="scheduleAgenda" class="schedule-agenda"></div>
+              </div>
+            </section>
+
+            <section class="panel today-panel">
+              <div class="panel-heading">
+                <div><p class="eyebrow">UNA SUGERENCIA PARA TI</p><h2>Tema hoy</h2></div>
+                <span class="today-spark">✳</span>
+              </div>
+              <div class="topic-card">
+                <span class="topic-label">RECOMENDADO PARA HOY</span>
+                <h3>Maquetar página de inicio</h3>
+                <p>Continúa con la estructura visual del portafolio. Un avance pequeño y constante vale más que una sesión agotadora.</p>
+                <div class="topic-tags"><span>Diseño UI</span><span>Proyecto personal</span></div>
+              </div>
+              <div class="hours-summary">
+                <div><span class="hours-icon">◷</span><span><small>TIEMPO SUGERIDO</small><strong>1 h 30 min</strong></span></div>
+                <span class="hours-note">en 2 sesiones<br>con una pausa</span>
+              </div>
+              <button type="button" class="topic-button">Planificar esta sesión <span>→</span></button>
+            </section>
+          </div>
+        </div>
+      </div>
+      <section id="projectWorkspace" class="project-workspace-view">
+        <header class="project-workspace-header">
+          <div>
+            <p class="eyebrow">PLANIFICA Y AVANZA</p>
+            <h1>Proyectos <span>y tareas</span></h1>
+            <p class="project-workspace-subtitle">Un plan simple para proyectos, tareas y exámenes, a tu ritmo.</p>
+          </div>
+          <button type="button" class="primary-button" id="createProjectButton"><span>＋</span> Nuevo proyecto</button>
+        </header>
+        <div class="project-workspace-layout">
+          <aside class="project-browser panel">
+            <div class="project-browser-heading"><div><p class="eyebrow">TU TRABAJO</p><h2>Mis planes <span id="projectCount">0</span></h2></div></div>
+            <div id="projectList" class="project-list"></div>
+            <button type="button" class="project-create-secondary" id="createProjectFromList">＋ Crear un proyecto</button>
+          </aside>
+          <section class="project-detail panel" aria-label="Detalle y plan de proyecto">
+            <div id="projectEmptyState" class="project-empty-state">
+              <span class="project-empty-icon">◷</span>
+              <h2>Organiza tu siguiente objetivo</h2>
+              <p>Crea un proyecto, una tarea o un examen y prepararemos una lista de pasos para empezar.</p>
+              <button type="button" class="primary-button" id="emptyCreateProject"><span>＋</span> Crear mi primer plan</button>
+            </div>
+            <div id="projectDetailContent" hidden>
+              <div class="project-detail-toolbar">
+                <span id="projectDetailType" class="project-type-pill">PROYECTO</span>
+                <button type="button" class="project-delete-button" id="deleteProjectButton">Eliminar</button>
+              </div>
+              <div class="project-detail-title-row">
+                <div><h2 id="projectDetailName"></h2><p id="projectDetailDescription"></p></div>
+                <span id="projectDetailImportance" class="project-importance-pill"></span>
+              </div>
+              <div class="project-metrics">
+                <article><span>ENTREGA</span><strong id="projectDetailDeadline">Sin fecha</strong></article>
+                <article><span>TIEMPO DEDICADO</span><strong id="projectDetailHours">0 min</strong></article>
+                <article><span>OBJETIVO DIARIO</span><strong id="projectDetailDailyLimit">1 h / día</strong></article>
+                <article><span>TIEMPO RESTANTE</span><strong id="projectDetailRemaining">—</strong></article>
+              </div>
+              <div class="project-plan-progress">
+                <div><span>Progreso del plan</span><strong id="projectDetailProgress">0%</strong></div>
+                <div class="progress-track"><div id="projectDetailProgressBar" class="progress-fill"></div></div>
+                <small id="projectDetailTaskCount">0 de 0 tareas completadas</small>
+              </div>
+              <div class="study-recommendation">
+                <span class="recommendation-icon">✳</span>
+                <div><strong>Plan de estudio sugerido</strong><p id="projectRecommendation">Marca una fecha de entrega y tareas para organizar tu tiempo.</p></div>
+              </div>
+              <div class="work-session-bar">
+                <div><strong id="workSessionLabel">¿Vas a trabajar en este plan?</strong><span id="workSessionHint">Registra el tiempo dedicado al proyecto.</span></div>
+                <button type="button" class="work-session-button" id="workSessionButton">▶ Iniciar enfoque</button>
+              </div>
+              <div class="generated-plan-heading"><div><p class="eyebrow">PASOS PARA AVANZAR</p><h3>Lista de trabajo</h3></div><button type="button" class="text-button" id="addProjectTask">＋ Añadir tarea</button></div>
+              <div id="projectTasksList" class="project-tasks-list"></div>
+              <form id="projectTaskForm" class="project-task-form" hidden>
+                <input id="projectTaskTitle" type="text" maxlength="100" placeholder="Nombre de la tarea" required>
+                <input id="projectTaskHours" type="number" min="0.25" max="24" step="0.25" value="1" aria-label="Horas estimadas">
+                <button type="submit" class="secondary-button">Añadir</button>
+                <button type="button" class="cancel-task-button" id="cancelProjectTask">Cancelar</button>
+              </form>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <footer class="footer-note">Hecho para aprender, crear y avanzar con código <span>✦</span></footer>
+    </main>
+  </div>
+  <dialog id="projectDialog" class="app-dialog project-dialog">
+    <form id="projectForm" method="dialog">
+      <div class="dialog-heading"><div><p class="eyebrow">NUEVO PLAN</p><h2>¿Qué quieres organizar?</h2></div><button type="button" class="dialog-close" data-close-project aria-label="Cerrar">×</button></div>
+      <label class="field-label">Tipo de trabajo
+        <select id="newProjectType"><option value="project">Proyecto</option><option value="task">Tarea</option><option value="exam">Examen</option></select>
+      </label>
+      <label class="field-label">Nombre<input id="newProjectName" maxlength="100" placeholder="Ej. Preparar examen de matemáticas" required></label>
+      <label class="field-label">Descripción (opcional)<input id="newProjectDescription" maxlength="180" placeholder="¿Qué quieres lograr?"></label>
+      <label class="field-label">Importancia
+        <select id="newProjectImportance"><option value="important">Importante</option><option value="normal">No tan importante</option><option value="low">Aún no importante</option><option value="upcoming">Próximo</option></select>
+      </label>
+      <div class="form-row">
+        <label class="field-label">Fecha de entrega<input id="newProjectDeadline" type="date" aria-describedby="projectDeadlineHint"><small id="projectDeadlineHint" class="field-hint">Opcional. Elige hoy o una fecha futura válida; aparecerá en el horario.</small></label>
+        <label class="field-label">Límite diario (horas)<input id="newProjectDailyLimit" type="number" min="0.5" max="12" step="0.5" value="2" required></label>
+      </div>
+      <label class="field-label">Tiempo total estimado (horas)<input id="newProjectEstimate" type="number" min="0.5" max="500" step="0.5" value="6" required></label>
+      <label class="field-label">Vincular con una nota (opcional)<select id="newProjectNote"><option value="">Sin nota vinculada</option></select></label>
+      <p class="project-plan-hint">Crearemos una lista inicial de pasos que podrás editar y marcar como completados.</p>
+      <div class="dialog-actions"><button type="button" class="secondary-button" data-close-project>Cancelar</button><button type="submit" class="primary-button">Crear plan</button></div>
+    </form>
+  </dialog>
+</body>
+</html>
