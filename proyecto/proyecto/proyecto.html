@@ -18,6 +18,12 @@
 </head>
 <body>
   <main id="authScreen" class="auth-screen">
+    <div class="auth-decoration" aria-hidden="true">
+      <span class="auth-shape auth-shape-circle"></span>
+      <span class="auth-shape auth-shape-diamond"></span>
+      <span class="auth-shape auth-shape-ring"></span>
+      <span class="auth-shape auth-shape-triangle"></span>
+    </div>
     <form id="authForm" class="auth-card" method="post">
       <a class="brand auth-brand" href="#" aria-label="Blockgram">
         <span class="brand-mark" aria-hidden="true">B</span>
@@ -26,6 +32,7 @@
       <p class="eyebrow">TU CUADERNO, EN CUALQUIER DISPOSITIVO</p>
       <h1 id="authTitle">Inicia sesión</h1>
       <p id="authDescription" class="auth-description">Entra con tu usuario y contraseña para acceder a tus notas.</p>
+      <p id="authLocalNotice" class="auth-local-notice" role="status" hidden></p>
       <label class="field-label">Usuario
         <input id="authUsername" name="username" type="text" minlength="3" maxlength="30" autocomplete="username" autocapitalize="none" spellcheck="false" required>
       </label>
@@ -36,7 +43,7 @@
       <button id="authSubmit" class="primary-button auth-submit" type="submit">Iniciar sesión</button>
       <button id="toggleAuthMode" class="auth-toggle" type="button">¿No tienes cuenta? Regístrate</button>
       <button id="useLocalButton" class="auth-toggle" type="button">Continuar como invitado/local</button>
-      <p class="auth-footnote">Las cuentas usan usuario y contraseña únicos en el servidor. Como invitado, tus datos se guardan solo en este navegador. No hay recuperación de contraseña por correo.</p>
+      <p class="auth-footnote">Las cuentas del servidor sincronizan tus datos; en modo local, cuentas e invitado se guardan solo en este navegador. No hay recuperación de contraseña por correo.</p>
     </form>
   </main>
   <div class="app-shell" id="appShell" hidden>
@@ -51,6 +58,10 @@
         <a class="nav-link" href="#notas" data-view="notes"><span class="nav-icon">▤</span>Notas y snippets</a>
         <a class="nav-link" href="#projectWorkspace" data-view="projects"><span class="nav-icon">☑</span>Proyectos y tareas</a>
         <a class="nav-link" href="#horario" data-view="dashboard"><span class="nav-icon">◷</span>Horario</a>
+        <button type="button" class="nav-link account-nav-link" data-open-account aria-label="Abrir opciones de cuenta">
+          <svg class="nav-icon" aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"></circle><path d="M4.5 21a7.5 7.5 0 0 1 15 0"></path></svg>
+          <span>Mi cuenta</span>
+        </button>
       </nav>
       <div class="sidebar-bottom">
         <div class="focus-card">
@@ -157,7 +168,7 @@
         </div>
         <div class="account-controls">
           <span>Cuenta: <strong id="accountUsername"></strong><small id="accountSyncStatus" role="status">Sincronizado</small></span>
-          <button type="button" id="logoutButton">Cerrar sesión</button>
+          <button type="button" data-open-account aria-label="Abrir opciones de cuenta">Mi cuenta</button>
         </div>
       </header>
       <section id="syncConflictPanel" class="sync-conflict-panel" role="alert" hidden>
@@ -345,6 +356,59 @@
       <label class="field-label">Vincular con una nota (opcional)<select id="newProjectNote"><option value="">Sin nota vinculada</option></select></label>
       <p class="project-plan-hint">Crearemos una lista inicial de pasos que podrás editar y marcar como completados.</p>
       <div class="dialog-actions"><button type="button" class="secondary-button" data-close-project>Cancelar</button><button type="submit" class="primary-button">Crear plan</button></div>
+    </form>
+  </dialog>
+  <dialog id="accountDialog" class="app-dialog account-dialog" aria-labelledby="accountDialogTitle">
+    <div id="accountMenu">
+      <div class="dialog-heading">
+        <div><p class="eyebrow">TU CUENTA</p><h2 id="accountDialogTitle">Usuario: <span id="accountDialogUsername"></span></h2></div>
+        <button type="button" class="dialog-close" data-close-account aria-label="Cerrar">×</button>
+      </div>
+      <div class="account-menu-actions">
+        <button type="button" class="secondary-button" id="openPasswordChange">Cambiar contraseña</button>
+        <button type="button" class="secondary-button" id="switchAccountButton">Cambiar de cuenta</button>
+        <button type="button" class="account-logout-button" id="logoutButton">Cerrar sesión</button>
+        <button type="button" class="account-delete-button" id="openDeleteAccount">Eliminar cuenta</button>
+      </div>
+    </div>
+    <form id="passwordChangeForm" hidden>
+      <div class="dialog-heading">
+        <div><p class="eyebrow">SEGURIDAD</p><h2>Cambiar contraseña</h2></div>
+        <button type="button" class="dialog-close" data-close-account aria-label="Cerrar">×</button>
+      </div>
+      <label class="field-label">Contraseña actual
+        <input id="currentPassword" type="password" minlength="1" maxlength="128" autocomplete="current-password" required>
+      </label>
+      <label class="field-label">Nueva contraseña
+        <input id="newPassword" type="password" minlength="10" maxlength="128" autocomplete="new-password" required>
+        <small class="field-hint">Debe tener al menos 10 caracteres.</small>
+      </label>
+      <label class="field-label">Confirmar nueva contraseña
+        <input id="confirmPassword" type="password" minlength="10" maxlength="128" autocomplete="new-password" required>
+      </label>
+      <p id="passwordChangeMessage" class="auth-message" role="alert" aria-live="polite"></p>
+      <div class="dialog-actions">
+        <button type="button" class="secondary-button" id="cancelPasswordChange">Cancelar</button>
+        <button type="submit" class="primary-button" id="savePasswordChange">Guardar contraseña</button>
+      </div>
+    </form>
+    <form id="deleteAccountForm" hidden>
+      <div class="dialog-heading">
+        <div><p class="eyebrow">ACCIÓN PERMANENTE</p><h2>Eliminar cuenta</h2></div>
+        <button type="button" class="dialog-close" data-close-account aria-label="Cerrar">×</button>
+      </div>
+      <p id="deleteAccountWarning" class="account-delete-warning"></p>
+      <label class="field-label">Escribe tu usuario para confirmar
+        <input id="deleteAccountUsername" type="text" maxlength="30" autocomplete="off" required>
+      </label>
+      <label class="field-label">Contraseña actual
+        <input id="deleteAccountPassword" type="password" minlength="1" maxlength="128" autocomplete="current-password" required>
+      </label>
+      <p id="deleteAccountMessage" class="auth-message" role="alert" aria-live="polite"></p>
+      <div class="dialog-actions">
+        <button type="button" class="secondary-button" id="cancelDeleteAccount">Cancelar</button>
+        <button type="submit" class="account-delete-button" id="confirmDeleteAccount">Eliminar permanentemente</button>
+      </div>
     </form>
   </dialog>
 </body>

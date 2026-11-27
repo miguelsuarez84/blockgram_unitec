@@ -373,7 +373,9 @@ class BlockgramHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlsplit(self.path).path
-        if path not in ("/api/register", "/api/login", "/api/logout"):
+        if path not in (
+                "/api/register", "/api/login", "/api/logout",
+                "/api/change-password", "/api/delete-account"):
             self.send_error_json(HTTPStatus.NOT_FOUND, "No se encontró la ruta solicitada.")
             return
         if not self.require_same_origin():
@@ -385,6 +387,116 @@ class BlockgramHandler(BaseHTTPRequestHandler):
             return
         except ValueError as error:
             self.send_error_json(HTTPStatus.BAD_REQUEST, str(error))
+            return
+
+        if path == "/api/delete-account":
+            user = self.require_user()
+            if not user:
+                return
+            if self.headers.get("X-Blockgram-Account") != user["username"]:
+                self.send_error_json(HTTPStatus.CONFLICT, "La sesión de esta pestaña pertenece a otra cuenta.")
+                return
+            password = document.get("currentPassword")
+            if not isinstance(password, str) or not password:
+                self.send_error_json(HTTPStatus.BAD_REQUEST, "Escribe la contraseña actual para eliminar la cuenta.")
+                return
+            try:
+                password_bytes = len(password.encode("utf-8"))
+            except UnicodeEncodeError:
+                self.send_error_json(HTTPStatus.BAD_REQUEST, "La contraseña contiene caracteres no válidos.")
+                return
+            if len(password) > 128 or password_bytes > 512:
+                self.send_error_json(HTTPStatus.BAD_REQUEST, "La contraseña no puede superar 128 caracteres.")
+                return
+            if not self.check_auth_rate(user["username"]):
+                self.send_error_json(
+                    HTTPStatus.TOO_MANY_REQUESTS,
+                    "Demasiados intentos. Espera un minuto e inténtalo de nuevo.",
+                )
+                return
+            with connect_database() as connection:
+                account = connection.execute(
+                    "SELECT password_salt, password_hash FROM users WHERE id = ?",
+                    (user["id"],),
+                ).fetchone()
+                if not account or not hmac.compare_digest(
+                    hash_password(password, account["password_salt"]),
+                    account["password_hash"],
+                ):
+                    self.send_error_json(HTTPStatus.UNAUTHORIZED, "La contraseña actual es incorrecta.")
+                    return
+                connection.execute("DELETE FROM users WHERE id = ?", (user["id"],))
+            self.clear_auth_rate(user["username"])
+            self.send_json(
+                HTTPStatus.OK,
+                {"ok": True},
+                [self.session_cookie("", 0)],
+            )
+            return
+
+        if path == "/api/change-password":
+            user = self.require_user()
+            if not user:
+                return
+            if self.headers.get("X-Blockgram-Account") != user["username"]:
+                self.send_error_json(HTTPStatus.CONFLICT, "La sesión de esta pestaña pertenece a otra cuenta.")
+                return
+            current_password = document.get("currentPassword")
+            new_password = document.get("newPassword")
+            if not isinstance(current_password, str) or not isinstance(new_password, str):
+                self.send_error_json(HTTPStatus.BAD_REQUEST, "Escribe la contraseña actual y la nueva contraseña.")
+                return
+            try:
+                current_password_bytes = len(current_password.encode("utf-8"))
+                new_password_bytes = len(new_password.encode("utf-8"))
+            except UnicodeEncodeError:
+                self.send_error_json(HTTPStatus.BAD_REQUEST, "Las contraseñas contienen caracteres no válidos.")
+                return
+            if len(current_password) > 128 or current_password_bytes > 512:
+                self.send_error_json(HTTPStatus.BAD_REQUEST, "La contraseña actual no puede superar 128 caracteres.")
+                return
+            if len(new_password) < 10:
+                self.send_error_json(
+                    HTTPStatus.BAD_REQUEST,
+                    "La nueva contraseña debe tener entre 10 y 128 caracteres.",
+                )
+                return
+            if len(new_password) > 128 or new_password_bytes > 512:
+                self.send_error_json(HTTPStatus.BAD_REQUEST, "La contraseña no puede superar 128 caracteres.")
+                return
+            if not self.check_auth_rate(user["username"]):
+                self.send_error_json(
+                    HTTPStatus.TOO_MANY_REQUESTS,
+                    "Demasiados intentos. Espera un minuto e inténtalo de nuevo.",
+                )
+                return
+            with connect_database() as connection:
+                account = connection.execute(
+                    "SELECT password_salt, password_hash FROM users WHERE id = ?",
+                    (user["id"],),
+                ).fetchone()
+                if not account or not hmac.compare_digest(
+                    hash_password(current_password, account["password_salt"]),
+                    account["password_hash"],
+                ):
+                    self.send_error_json(HTTPStatus.UNAUTHORIZED, "La contraseña actual es incorrecta.")
+                    return
+                salt = secrets.token_bytes(16)
+                connection.execute(
+                    "UPDATE users SET password_salt = ?, password_hash = ? WHERE id = ?",
+                    (salt, hash_password(new_password, salt), user["id"]),
+                )
+                cookie = SimpleCookie()
+                cookie.load(self.headers.get("Cookie", ""))
+                morsel = cookie.get(COOKIE_NAME)
+                if morsel:
+                    token_hash = hashlib.sha256(morsel.value.encode("utf-8")).hexdigest()
+                    connection.execute(
+                        "DELETE FROM sessions WHERE user_id = ? AND token_hash != ?",
+                        (user["id"], token_hash),
+                    )
+            self.clear_auth_rate(user["username"])
+            self.send_json(HTTPStatus.OK, {"ok": True})
             return
 
         if path == "/api/logout":

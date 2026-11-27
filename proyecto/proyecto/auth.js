@@ -8,13 +8,30 @@
   const authUsername = document.getElementById("authUsername");
   const authPassword = document.getElementById("authPassword");
   const authMessage = document.getElementById("authMessage");
+  const authLocalNotice = document.getElementById("authLocalNotice");
   const authSubmit = document.getElementById("authSubmit");
   const toggleAuthMode = document.getElementById("toggleAuthMode");
+  const accountDialog = document.getElementById("accountDialog");
+  const accountMenu = document.getElementById("accountMenu");
+  const passwordChangeForm = document.getElementById("passwordChangeForm");
+  const passwordChangeMessage = document.getElementById("passwordChangeMessage");
+  const currentPassword = document.getElementById("currentPassword");
+  const newPassword = document.getElementById("newPassword");
+  const confirmPassword = document.getElementById("confirmPassword");
+  const deleteAccountForm = document.getElementById("deleteAccountForm");
+  const deleteAccountUsername = document.getElementById("deleteAccountUsername");
+  const deleteAccountPassword = document.getElementById("deleteAccountPassword");
+  const deleteAccountMessage = document.getElementById("deleteAccountMessage");
+  const deleteAccountWarning = document.getElementById("deleteAccountWarning");
   let useLocalButton = document.getElementById("useLocalButton");
   const legacyAttachmentOwnerKey = "blockgramLegacyAttachmentOwnerV1";
   const accountStorageKey = (key, username) =>
     `blockgram:${encodeURIComponent(username.toLowerCase())}:${key}`;
-  const lastAccountUsernameKey = "blockgramLastAccountUsernameV1";
+  const localAccountPrefix = "blockgramLocalAccountV1:";
+  const localSessionKey = "blockgramLocalSessionV1";
+  const guestUsername = "__blockgram_guest__";
+  const localUsernamePattern = /^[A-Za-z0-9][A-Za-z0-9._-]{2,29}$/;
+  const localPasswordIterations = 210000;
   let registering = false;
   let apiUnavailable = false;
   let resolveBlockgramReady;
@@ -38,10 +55,12 @@
   };
 
   const request = async (path, options) => {
-    const controller = path === "session" && typeof AbortController === "function"
+    const timeoutDuration = path === "session" ? 4000 :
+      path === "login" || path === "register" ? 10000 : 0;
+    const controller = timeoutDuration && typeof AbortController === "function"
       ? new AbortController()
       : null;
-    const timeout = controller ? window.setTimeout(() => controller.abort(), 4000) : 0;
+    const timeout = controller ? window.setTimeout(() => controller.abort(), timeoutDuration) : 0;
     try {
       const response = await fetch(`/api/${path}`, {
         credentials: "same-origin",
@@ -263,6 +282,192 @@
     localStorage.setItem(legacyAttachmentOwnerKey, username);
   };
 
+  const localAccountKey = (username) =>
+    `${localAccountPrefix}${encodeURIComponent(username.toLowerCase())}`;
+
+  const encodeBase64 = (bytes) =>
+    window.btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""));
+
+  const decodeBase64 = (value) => {
+    try {
+      return Uint8Array.from(window.atob(value), (character) => character.charCodeAt(0));
+    } catch (error) {
+      throw new Error("La cuenta local tiene credenciales inválidas.");
+    }
+  };
+
+  const deriveLocalPasswordHash = async (password, salt) => {
+    if (!window.crypto || !window.crypto.subtle) {
+      throw new Error("Este navegador no admite el inicio de sesión local seguro. Usa HTTPS o conecta el servidor de Blockgram.");
+    }
+    const keyMaterial = await window.crypto.subtle.importKey(
+      "raw",
+      new TextEncoder().encode(password),
+      "PBKDF2",
+      false,
+      ["deriveBits"]
+    );
+    const derivedBits = await window.crypto.subtle.deriveBits({
+      name: "PBKDF2",
+      salt,
+      iterations: localPasswordIterations,
+      hash: "SHA-256"
+    }, keyMaterial, 256);
+    return new Uint8Array(derivedBits);
+  };
+
+  const readLocalAccount = (username) => {
+    const text = localStorage.getItem(localAccountKey(username));
+    if (text === null) return null;
+    let account;
+    try {
+      account = JSON.parse(text);
+    } catch (error) {
+      throw new Error("Los datos de la cuenta local están dañados.");
+    }
+    if (!account || account.version !== 1 || typeof account.username !== "string" ||
+      account.username.toLowerCase() !== username.toLowerCase() ||
+      !localUsernamePattern.test(account.username) ||
+      typeof account.salt !== "string" || typeof account.passwordHash !== "string") {
+      throw new Error("Los datos de la cuenta local tienen un formato inválido.");
+    }
+    const salt = decodeBase64(account.salt);
+    const passwordHash = decodeBase64(account.passwordHash);
+    if (salt.length !== 16 || passwordHash.length !== 32) {
+      throw new Error("La cuenta local tiene credenciales inválidas.");
+    }
+    return { ...account, salt, passwordHash };
+  };
+
+  const equalBytes = (first, second) => {
+    if (first.length !== second.length) return false;
+    let difference = 0;
+    for (let index = 0; index < first.length; index += 1) {
+      difference |= first[index] ^ second[index];
+    }
+    return difference === 0;
+  };
+
+  const validateLocalCredentials = (username, password, requireNewPassword = false) => {
+    const normalizedUsername = username.trim();
+    if (!localUsernamePattern.test(normalizedUsername)) {
+      throw new Error("El usuario debe tener de 3 a 30 caracteres: letras, números, punto, guion o guion bajo.");
+    }
+    if (typeof password !== "string" || !password || (requireNewPassword && password.length < 10)) {
+      throw new Error("La contraseña debe tener al menos 10 caracteres.");
+    }
+    if (password.length > 128 || new TextEncoder().encode(password).byteLength > 512) {
+      throw new Error("La contraseña no puede superar 128 caracteres.");
+    }
+    return normalizedUsername;
+  };
+
+  const startLocalSession = (username) => {
+    localStorage.setItem(localSessionKey, username);
+    window.blockgramOffline = true;
+    window.blockgramAccountRevision = 0;
+    showApplication(username);
+  };
+
+  const registerLocalAccount = async (username, password) => {
+    const normalizedUsername = validateLocalCredentials(username, password, true);
+    const key = localAccountKey(normalizedUsername);
+    if (localStorage.getItem(key) !== null) {
+      throw new Error("Ese usuario ya está registrado en este navegador.");
+    }
+    const localData = readLocalData(normalizedUsername);
+    const salt = window.crypto && window.crypto.getRandomValues
+      ? window.crypto.getRandomValues(new Uint8Array(16))
+      : null;
+    if (!salt) {
+      throw new Error("Este navegador no permite crear credenciales locales seguras.");
+    }
+    const passwordHash = await deriveLocalPasswordHash(password, salt);
+    const account = {
+      version: 1,
+      username: normalizedUsername,
+      salt: encodeBase64(salt),
+      passwordHash: encodeBase64(passwordHash)
+    };
+    try {
+      localStorage.setItem(key, JSON.stringify(account));
+      if (!localData.cachePresent) {
+        storeAccountData({
+          notes: [],
+          projects: [],
+          selectedProjectId: null,
+          activeWorkSession: null,
+          dailyProgress: { count: 0, lastProgressDate: "" }
+        }, normalizedUsername);
+      }
+      startLocalSession(normalizedUsername);
+    } catch (error) {
+      try {
+        localStorage.removeItem(key);
+      } catch (cleanupError) {
+        console.error("No se pudo limpiar el registro local incompleto:", cleanupError);
+      }
+      throw error;
+    }
+  };
+
+  const loginLocalAccount = async (username, password) => {
+    const normalizedUsername = validateLocalCredentials(username, password);
+    const account = readLocalAccount(normalizedUsername);
+    if (!account) {
+      throw new Error("No existe una cuenta con ese usuario en este navegador. Regístrate aquí o conecta con el servidor.");
+    }
+    const candidateHash = await deriveLocalPasswordHash(password, account.salt);
+    if (!equalBytes(candidateHash, account.passwordHash)) {
+      throw new Error("Usuario o contraseña incorrectos.");
+    }
+    readLocalData(account.username);
+    startLocalSession(account.username);
+  };
+
+  const clearLocalAccountStorage = (username) => {
+    [
+      accountStorageKey("notes", username),
+      accountStorageKey("projects", username),
+      accountStorageKey("progress", username)
+    ].forEach((key) => localStorage.removeItem(key));
+    const activeUsername = localStorage.getItem(localSessionKey);
+    if (activeUsername && activeUsername.toLowerCase() === username.toLowerCase()) {
+      localStorage.removeItem(localSessionKey);
+    }
+    const attachmentOwner = localStorage.getItem(legacyAttachmentOwnerKey);
+    if (attachmentOwner && attachmentOwner.toLowerCase() === username.toLowerCase()) {
+      localStorage.removeItem(legacyAttachmentOwnerKey);
+    }
+    localStorage.removeItem(localAccountKey(username));
+  };
+
+  const resumeLocalSession = () => {
+    const username = localStorage.getItem(localSessionKey);
+    if (!username) return false;
+    if (username === guestUsername) {
+      const localData = readLocalData(guestUsername, true);
+      if (localData.legacySource) {
+        saveLegacyOwner(guestUsername);
+        storeAccountData(localData, guestUsername);
+      }
+      window.blockgramOffline = true;
+      window.blockgramAccountRevision = 0;
+      showApplication(guestUsername);
+      return true;
+    }
+    const account = readLocalAccount(username);
+    if (!account) {
+      localStorage.removeItem(localSessionKey);
+      return false;
+    }
+    readLocalData(account.username);
+    window.blockgramOffline = true;
+    window.blockgramAccountRevision = 0;
+    showApplication(account.username);
+    return true;
+  };
+
   const storeConflict = (username, localData, remoteData, revision) => {
     return {
       localData: validateAccountData(localData),
@@ -277,11 +482,17 @@
       ? "blockgramAttachments"
       : `blockgramAttachments:${username.toLowerCase()}`;
     window.blockgramAccountUsername = username;
+    const displayUsername = window.blockgramOffline && username === guestUsername
+      ? "Invitado"
+      : username;
     document.getElementById("accountUsername").textContent =
-      window.blockgramOffline ? "Local" : username;
-    const logoutButton = document.getElementById("logoutButton");
-    logoutButton.hidden = false;
-    logoutButton.textContent = window.blockgramOffline ? "Iniciar sesión" : "Cerrar sesión";
+      window.blockgramOffline ? displayUsername : username;
+    document.getElementById("accountDialogUsername").textContent =
+      window.blockgramOffline ? displayUsername : username;
+    document.getElementById("openPasswordChange").hidden =
+      Boolean(window.blockgramOffline && username === guestUsername);
+    document.getElementById("openDeleteAccount").hidden =
+      Boolean(window.blockgramOffline && username === guestUsername);
     if (window.blockgramOffline) {
       document.getElementById("accountSyncStatus").textContent = "Solo en este dispositivo";
     }
@@ -291,15 +502,13 @@
   };
 
   const initializeLocalMode = () => {
-    const username = localStorage.getItem(lastAccountUsernameKey) || "local";
+    const username = guestUsername;
     const localData = readLocalData(username, true);
     if (localData.legacySource) {
       saveLegacyOwner(username);
       storeAccountData(localData, username);
     }
-    window.blockgramOffline = true;
-    window.blockgramAccountRevision = 0;
-    showApplication(username);
+    startLocalSession(username);
   };
 
   const initialize = async () => {
@@ -316,12 +525,24 @@
         if (isApiUnavailable(error)) {
           apiUnavailable = true;
           updateMode();
-          setMessage("El servidor de cuentas no está disponible. Recarga cuando vuelva para iniciar sesión o continúa como invitado/local.");
+          try {
+            if (resumeLocalSession()) return true;
+          } catch (localError) {
+            setMessage(localError.message || "No se pudo abrir la cuenta local de este navegador.");
+            return false;
+          }
+          setMessage("");
           return false;
         }
         throw error;
       }
       if (!session.authenticated) return false;
+      window.blockgramOffline = false;
+      try {
+        localStorage.removeItem(localSessionKey);
+      } catch (error) {
+        console.warn("No se pudo limpiar la sesión local anterior:", error);
+      }
       const data = await request("data", { headers: accountHeaders(session.username) });
       if (!Number.isSafeInteger(data._revision) || data._revision < 1) {
         throw new Error("El servidor devolvió una versión de datos inválida.");
@@ -384,11 +605,6 @@
         }
       }
       if (!window.blockgramPendingConflict) storeAccountData(data, session.username);
-      try {
-        localStorage.setItem(lastAccountUsernameKey, session.username);
-      } catch (error) {
-        console.warn("No se pudo recordar la última cuenta de Blockgram:", error);
-      }
       window.blockgramAccountRevision = data._revision;
       showApplication(session.username);
       return true;
@@ -396,7 +612,7 @@
       if (isApiUnavailable(error)) {
         apiUnavailable = true;
         updateMode();
-        setMessage("El servidor de cuentas no está disponible. Recarga cuando vuelva para iniciar sesión o continúa como invitado/local.");
+        setMessage("");
       } else {
         setMessage(error.message || "No se pudo conectar con Blockgram. Comprueba el servidor e inténtalo otra vez.");
       }
@@ -406,10 +622,16 @@
   const updateMode = () => {
     authTitle.textContent = registering ? "Crea tu cuenta" : "Inicia sesión";
     authDescription.textContent = apiUnavailable
-      ? "Las cuentas requieren el servidor de Blockgram. Puedes continuar como invitado y guardar datos solo en este navegador."
+      ? registering
+        ? "Crea una cuenta que se guardará solo en este navegador; no se sincronizará con otros dispositivos."
+        : "Entra con una cuenta creada en este navegador. Sus datos no se sincronizan con otros dispositivos."
       : registering
         ? "Elige un usuario único y una contraseña para guardar tus notas en línea."
         : "Entra con tu usuario y contraseña para acceder a tus notas.";
+    authLocalNotice.hidden = !apiUnavailable;
+    authLocalNotice.textContent = apiUnavailable
+      ? "Modo local del navegador: las cuentas y sus datos solo estarán disponibles en este dispositivo."
+      : "";
     authSubmit.textContent = registering ? "Registrarme" : "Iniciar sesión";
     toggleAuthMode.textContent = registering
       ? "¿Ya tienes cuenta? Inicia sesión"
@@ -436,16 +658,21 @@
 
   authForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    if (apiUnavailable) {
-      setMessage("El servidor de cuentas no está disponible. Recarga cuando vuelva o continúa como invitado/local.");
-      return;
-    }
     authSubmit.disabled = true;
-    setMessage(registering ? "Creando cuenta..." : "Iniciando sesión...");
     let activeUsername = authUsername.value.trim();
     let registrationSucceeded = false;
+    let usedLocalAuth = false;
     try {
-      if (registering) {
+      if (apiUnavailable) {
+        setMessage(registering ? "Creando cuenta local..." : "Iniciando sesión local...");
+        if (registering) {
+          await registerLocalAccount(activeUsername, authPassword.value);
+        } else {
+          await loginLocalAccount(activeUsername, authPassword.value);
+        }
+        usedLocalAuth = true;
+      } else if (registering) {
+        setMessage("Creando cuenta...");
         const localData = readLocalData(activeUsername, true);
         const importLocal = hasLocalData(localData) && window.confirm(
           "Hay notas o proyectos guardados en este dispositivo. ¿Quieres copiarlos a tu nueva cuenta?"
@@ -456,43 +683,68 @@
           setMessage("Registro cancelado; tus datos locales se conservaron.");
           return;
         }
-        const registered = await request("register", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username: authUsername.value.trim(), password: authPassword.value })
-        });
-        registrationSucceeded = true;
-        activeUsername = registered.username;
-        if (localData.legacySource) saveLegacyOwner(activeUsername);
-        if (importLocal) {
-          const result = await request("data", {
-            method: "PUT",
-            headers: accountHeaders(activeUsername, true),
-            body: JSON.stringify({ ...localData, expectedRevision: 1 })
+        let registered;
+        try {
+          registered = await request("register", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username: activeUsername, password: authPassword.value })
           });
-          storeAccountData({ ...localData, _revision: result.revision }, activeUsername);
-        } else {
-          storeAccountData({
-            notes: [],
-            projects: [],
-            selectedProjectId: null,
-            activeWorkSession: null,
-            dailyProgress: { count: 0, lastProgressDate: "" },
-            _revision: 1
-          }, activeUsername);
+        } catch (error) {
+          if (!isApiUnavailable(error)) throw error;
+          apiUnavailable = true;
+          updateMode();
+          setMessage("Creando cuenta local...");
+          await registerLocalAccount(activeUsername, authPassword.value);
+          usedLocalAuth = true;
+        }
+        if (!usedLocalAuth) {
+          registrationSucceeded = true;
+          activeUsername = registered.username;
+          if (localData.legacySource) saveLegacyOwner(activeUsername);
+          if (importLocal) {
+            const result = await request("data", {
+              method: "PUT",
+              headers: accountHeaders(activeUsername, true),
+              body: JSON.stringify({ ...localData, expectedRevision: 1 })
+            });
+            storeAccountData({ ...localData, _revision: result.revision }, activeUsername);
+          } else {
+            storeAccountData({
+              notes: [],
+              projects: [],
+              selectedProjectId: null,
+              activeWorkSession: null,
+              dailyProgress: { count: 0, lastProgressDate: "" },
+              _revision: 1
+            }, activeUsername);
+          }
         }
       } else {
-        const loggedIn = await request("login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username: authUsername.value.trim(), password: authPassword.value })
-        });
-        activeUsername = loggedIn.username;
+        setMessage("Iniciando sesión...");
+        let loggedIn;
+        try {
+          loggedIn = await request("login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username: activeUsername, password: authPassword.value })
+          });
+        } catch (error) {
+          if (!isApiUnavailable(error)) throw error;
+          apiUnavailable = true;
+          updateMode();
+          setMessage("Iniciando sesión local...");
+          await loginLocalAccount(activeUsername, authPassword.value);
+          usedLocalAuth = true;
+        }
+        if (!usedLocalAuth) activeUsername = loggedIn.username;
       }
-      try {
-        localStorage.setItem(lastAccountUsernameKey, activeUsername);
-      } catch (error) {
-        console.warn("No se pudo recordar la última cuenta de Blockgram:", error);
+      if (!usedLocalAuth) {
+        try {
+          localStorage.removeItem(localSessionKey);
+        } catch (error) {
+          console.warn("No se pudo limpiar la sesión local anterior:", error);
+        }
       }
       window.location.reload();
     } catch (error) {
@@ -510,10 +762,8 @@
       if (isApiUnavailable(error)) {
         apiUnavailable = true;
         updateMode();
-        setMessage("El servidor de cuentas no está disponible. Recarga cuando vuelva o continúa como invitado/local; tus datos no se sincronizarán.");
-      } else {
-        setMessage(error.message || "No se pudo conectar con el servidor. Inténtalo de nuevo.");
       }
+      setMessage(error.message || "No se pudo conectar con el servidor. Inténtalo de nuevo.");
     } finally {
       authSubmit.disabled = false;
     }
@@ -522,7 +772,12 @@
   document.getElementById("logoutButton").addEventListener("click", async () => {
     const button = document.getElementById("logoutButton");
     if (window.blockgramOffline) {
-      window.location.reload();
+      try {
+        localStorage.removeItem(localSessionKey);
+        window.location.reload();
+      } catch (error) {
+        window.alert(error.message || "No se pudo cerrar la sesión local.");
+      }
       return;
     }
     button.disabled = true;
@@ -537,6 +792,168 @@
     } catch (error) {
       button.disabled = false;
       window.alert(error.message || "No se pudo cerrar la sesión.");
+    }
+  });
+
+  document.querySelectorAll("[data-open-account]").forEach((button) => {
+    button.addEventListener("click", () => accountDialog.showModal());
+  });
+  document.querySelectorAll("[data-close-account]").forEach((button) => {
+    button.addEventListener("click", () => accountDialog.close());
+  });
+
+  const showAccountMenu = () => {
+    passwordChangeForm.reset();
+    passwordChangeMessage.textContent = "";
+    passwordChangeForm.hidden = true;
+    deleteAccountForm.reset();
+    deleteAccountMessage.textContent = "";
+    deleteAccountForm.hidden = true;
+    accountMenu.hidden = false;
+  };
+  document.getElementById("openPasswordChange").addEventListener("click", () => {
+    accountMenu.hidden = true;
+    passwordChangeForm.hidden = false;
+    currentPassword.focus();
+  });
+  document.getElementById("cancelPasswordChange").addEventListener("click", showAccountMenu);
+  accountDialog.addEventListener("close", showAccountMenu);
+  document.getElementById("openDeleteAccount").addEventListener("click", () => {
+    accountMenu.hidden = true;
+    deleteAccountForm.reset();
+    deleteAccountMessage.textContent = "";
+    deleteAccountWarning.textContent = window.blockgramOffline
+      ? "Se borrarán permanentemente esta cuenta, sus notas, proyectos, tareas y adjuntos de este navegador. No se puede deshacer."
+      : "Se borrarán permanentemente esta cuenta y sus datos del servidor, además de los datos y adjuntos de este navegador. Las copias locales de otros dispositivos no se pueden borrar desde aquí.";
+    deleteAccountForm.hidden = false;
+    deleteAccountUsername.focus();
+  });
+  document.getElementById("cancelDeleteAccount").addEventListener("click", showAccountMenu);
+  document.getElementById("switchAccountButton").addEventListener("click", async () => {
+    const button = document.getElementById("switchAccountButton");
+    if (window.blockgramOffline) {
+      try {
+        localStorage.removeItem(localSessionKey);
+        window.location.reload();
+      } catch (error) {
+        window.alert(error.message || "No se pudo cambiar de cuenta local.");
+      }
+      return;
+    }
+    button.disabled = true;
+    try {
+      if (window.blockgramFlushSync) await window.blockgramFlushSync();
+      await request("logout", {
+        method: "POST",
+        headers: accountHeaders(window.blockgramAccountUsername, true),
+        body: "{}"
+      });
+      window.location.reload();
+    } catch (error) {
+      button.disabled = false;
+      window.alert(error.message || "No se pudo cambiar de cuenta.");
+    }
+  });
+  passwordChangeForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (newPassword.value !== confirmPassword.value) {
+      passwordChangeMessage.textContent = "Las contraseñas nuevas no coinciden.";
+      confirmPassword.focus();
+      return;
+    }
+    const button = document.getElementById("savePasswordChange");
+    button.disabled = true;
+    passwordChangeMessage.textContent = "Actualizando contraseña...";
+    try {
+      if (window.blockgramOffline) {
+        const username = window.blockgramAccountUsername;
+        const account = readLocalAccount(username);
+        if (!account) throw new Error("No se encontró la cuenta local activa.");
+        validateLocalCredentials(username, currentPassword.value);
+        const currentHash = await deriveLocalPasswordHash(currentPassword.value, account.salt);
+        if (!equalBytes(currentHash, account.passwordHash)) {
+          throw new Error("La contraseña actual es incorrecta.");
+        }
+        validateLocalCredentials(username, newPassword.value, true);
+        const salt = window.crypto.getRandomValues(new Uint8Array(16));
+        const passwordHash = await deriveLocalPasswordHash(newPassword.value, salt);
+        localStorage.setItem(localAccountKey(username), JSON.stringify({
+          version: 1,
+          username: account.username,
+          salt: encodeBase64(salt),
+          passwordHash: encodeBase64(passwordHash)
+        }));
+      } else {
+        await request("change-password", {
+          method: "POST",
+          headers: accountHeaders(window.blockgramAccountUsername, true),
+          body: JSON.stringify({
+            currentPassword: currentPassword.value,
+            newPassword: newPassword.value
+          })
+        });
+      }
+      passwordChangeMessage.textContent = "Contraseña actualizada.";
+      passwordChangeForm.reset();
+      window.setTimeout(() => {
+        if (accountDialog.open) accountDialog.close();
+      }, 700);
+    } catch (error) {
+      passwordChangeMessage.textContent =
+        error.message || "No se pudo actualizar la contraseña.";
+    } finally {
+      button.disabled = false;
+    }
+  });
+  deleteAccountForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const username = window.blockgramAccountUsername;
+    if (deleteAccountUsername.value.trim().toLowerCase() !== username.toLowerCase()) {
+      deleteAccountMessage.textContent = "El usuario escrito no coincide con la cuenta activa.";
+      deleteAccountUsername.focus();
+      return;
+    }
+    const button = document.getElementById("confirmDeleteAccount");
+    button.disabled = true;
+    deleteAccountMessage.textContent = "Eliminando cuenta y datos...";
+    try {
+      if (window.blockgramOffline) {
+        const account = readLocalAccount(username);
+        if (!account) throw new Error("No se encontró la cuenta local que se va a eliminar.");
+        const normalizedUsername = validateLocalCredentials(username, deleteAccountPassword.value);
+        const candidateHash = await deriveLocalPasswordHash(deleteAccountPassword.value, account.salt);
+        if (!equalBytes(candidateHash, account.passwordHash)) {
+          throw new Error("La contraseña actual es incorrecta.");
+        }
+        await window.blockgramDeleteAccountAttachments();
+        if (window.blockgramStopAccountAutosave) window.blockgramStopAccountAutosave();
+        clearLocalAccountStorage(normalizedUsername);
+      } else {
+        await request("delete-account", {
+          method: "POST",
+          headers: accountHeaders(username, true),
+          body: JSON.stringify({ currentPassword: deleteAccountPassword.value })
+        });
+        if (window.blockgramStopAccountAutosave) window.blockgramStopAccountAutosave();
+        const cleanupErrors = [];
+        try {
+          await window.blockgramDeleteAccountAttachments();
+        } catch (error) {
+          cleanupErrors.push(error.message || "No se pudieron eliminar los adjuntos locales.");
+        }
+        try {
+          clearLocalAccountStorage(username);
+        } catch (error) {
+          cleanupErrors.push(error.message || "No se pudieron eliminar los datos locales.");
+        }
+        if (cleanupErrors.length) {
+          window.alert(`La cuenta se eliminó del servidor, pero falta limpiar este navegador: ${cleanupErrors.join(" ")}`);
+        }
+      }
+      window.location.reload();
+    } catch (error) {
+      deleteAccountMessage.textContent = error.message || "No se pudo eliminar la cuenta.";
+      button.disabled = false;
     }
   });
 

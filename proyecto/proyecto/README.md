@@ -1,16 +1,20 @@
 # Blockgram
 
-Blockgram es una aplicación web para organizar notas, fragmentos de código, proyectos y tareas. Las cuentas permiten acceder a las notas, proyectos, tareas y progreso desde distintos dispositivos mediante una API en Python y una base de datos SQLite.
+Blockgram es una aplicación web para organizar notas, fragmentos de código, proyectos y tareas. Las cuentas del servidor permiten acceder a las notas, proyectos, tareas y progreso desde distintos dispositivos mediante una API en Python y una base de datos SQLite.
 
 ## Funcionalidades
 
 - Registro e inicio de sesión con usuario y contraseña.
+- Registro e inicio de sesión locales por usuario cuando no hay API; los datos no se sincronizan entre dispositivos.
+- Gestión de cuenta desde la barra lateral: cambio de contraseña, cierre de sesión y cambio de cuenta.
+- Eliminación de cuenta con confirmación y verificación de contraseña, junto con sus datos asociados.
 - Notas con búsqueda por título o contenido y un editor con resaltado de sintaxis.
 - Proyectos, tareas, fechas de entrega, seguimiento del tiempo y recomendaciones de estudio.
 - Sincronización de datos de la cuenta y almacenamiento local separado por usuario.
 - Detección de cambios simultáneos para que el usuario elija qué versión conservar.
 - Exportación e importación de respaldos JSON.
 - Interfaz adaptable a escritorio y dispositivos móviles.
+- Pantalla de acceso con figuras geométricas sutiles y animaciones que respetan la preferencia de movimiento reducido.
 
 ## Tecnologías
 
@@ -98,14 +102,18 @@ La interfaz y la API se sirven desde el mismo origen. Las operaciones de escritu
 | `POST` | `/api/register` | Crea una cuenta y su documento inicial. |
 | `POST` | `/api/login` | Inicia sesión. |
 | `POST` | `/api/logout` | Cierra la sesión. |
+| `POST` | `/api/change-password` | Cambia la contraseña autenticando la contraseña actual. |
+| `POST` | `/api/delete-account` | Elimina la cuenta autenticada y sus datos del servidor tras verificar la contraseña. |
 | `GET` | `/api/data` | Obtiene el documento de la cuenta y su revisión. |
 | `PUT` | `/api/data` | Guarda el documento si `expectedRevision` coincide con la revisión actual. |
 
-Las rutas de registro e inicio reciben JSON con `username` y `password`. Las respuestas de error contienen un campo `error`. Una actualización con revisión obsoleta devuelve `409 Conflict` junto con la versión remota para permitir resolver el conflicto.
+Las rutas de registro e inicio reciben JSON con `username` y `password`. El cambio de contraseña recibe `currentPassword` y `newPassword`, requiere la sesión activa y el encabezado `X-Blockgram-Account`; las otras sesiones de esa cuenta se invalidan al completarlo. El borrado recibe `currentPassword` y `X-Blockgram-Account`; elimina también las sesiones y datos asociados del servidor. La interfaz además borra las copias locales de esa cuenta en el navegador actual. Las copias locales de otros dispositivos no se pueden borrar remotamente. Las respuestas de error contienen un campo `error`. Una actualización con revisión obsoleta devuelve `409 Conflict` junto con la versión remota para permitir resolver el conflicto.
 
 ## Publicación
 
-Para usar cuentas y sincronización desde Internet, despliega la aplicación en un servicio que ejecute Python y proporcione almacenamiento persistente. Configura el comando de inicio como `python server.py` y permite que el hosting asigne el puerto mediante `PORT`. Un despliegue estático en Vercel sirve la interfaz, pero no ejecuta `server.py`; allí la aplicación usa el modo local descrito arriba, a menos que configures y conectes una API compatible por separado.
+Para usar cuentas y sincronización desde Internet, despliega la aplicación en un servicio que ejecute Python y proporcione almacenamiento persistente. Configura el comando de inicio como `python server.py` y permite que el hosting asigne el puerto mediante `PORT`. Un despliegue estático en Vercel sirve la interfaz, pero no ejecuta `server.py`; en ese caso el registro e inicio de sesión funcionan localmente en el navegador.
+
+En el modo local, cada usuario (sin distinguir mayúsculas y minúsculas) y el invitado tienen espacios separados de notas, proyectos y adjuntos en `localStorage` e `IndexedDB`. Las cuentas locales son específicas del navegador y del origen, no se sincronizan y no se comparten entre dispositivos. Las contraseñas locales se guardan como derivaciones PBKDF2, no como texto plano, y se pueden cambiar desde **Mi cuenta**.
 
 En producción:
 
@@ -124,7 +132,7 @@ Un reinicio, cambio de instancia o redeploy puede borrar las cuentas y sus datos
 | `proyecto.html` | Estructura de la interfaz, formularios y vistas. |
 | `proyecto.css` | Estilos y diseño adaptable. |
 | `proyecto.js` | Notas, proyectos, tareas, calendario, adjuntos y sincronización. |
-| `auth.js` | Registro, inicio y cierre de sesión; aislamiento de datos locales por cuenta. |
+| `auth.js` | Registro e inicio de sesión local o en el servidor, gestión de cuenta y aislamiento de datos por usuario. |
 | `server.py` | Servidor web, API, validación, sesiones y persistencia SQLite. |
 | `README.md` | Documentación del proyecto y su operación. |
 | `index.html` | Entrada de la raíz; redirige a `proyecto.html`. |
@@ -134,11 +142,25 @@ Un reinicio, cambio de instancia o redeploy puede borrar las cuentas y sus datos
 Antes de subir los cambios a GitHub y desplegar en Vercel:
 
 1. Confirma que `index.html`, `proyecto.html`, `proyecto.css`, `proyecto.js` y `auth.js` estén incluidos en el repositorio y que Vercel use la raíz del proyecto como directorio de despliegue.
-2. Abre la URL raíz y confirma que redirija a la aplicación. En una vista previa estática de Vercel, comprueba que la interfaz aparezca aunque no exista `server.py` ni `/api/session`; el estado debe indicar **Solo en este dispositivo**.
-3. En esa vista previa, crea una nota y un proyecto con tareas, recarga la página y comprueba que sigan ahí. Prueba también calendario y racha.
-4. Añade un adjunto para comprobar IndexedDB y prueba Exportar e Importar con un respaldo JSON. Los datos locales de prueba no se comparten con otros dispositivos.
-5. Para comprobar cuentas entre dispositivos, inicia `py .\server.py`, registra un usuario y contraseña, y entra con esas mismas credenciales desde otro navegador. Intenta registrar el mismo nombre con mayúsculas distintas y confirma que el servidor lo rechace.
-6. Sin API, confirma que la pantalla ofrece **Continuar como invitado/local**; los datos de invitado deben persistir en ese navegador, pero no aparecer en otro dispositivo. Un despliegue estático de Vercel no proporciona la API de cuentas.
+2. Abre la URL raíz y confirma que redirija a la aplicación. En una vista previa estática de Vercel, comprueba que aparezca el aviso de modo local aunque no exista `server.py` ni `/api/session`.
+3. En esa vista previa, registra dos usuarios distintos (por ejemplo, `ana` y `luis`) con contraseñas de al menos 10 caracteres. Añade notas y proyectos distintos, cambia de cuenta y verifica que cada uno solo vea sus propios datos. Recarga e inicia sesión de nuevo para comprobar que se conservan.
+4. En **Mi cuenta → Cambiar contraseña**, cambia la clave de una cuenta local; cierra sesión y comprueba que la clave nueva funciona y la anterior no.
+5. Comprueba que `ANA` no se pueda registrar si ya existe `ana`. Añade adjuntos con cada cuenta y con **Continuar como invitado/local** para comprobar que también estén separados en IndexedDB; prueba Exportar e Importar.
+6. En **Mi cuenta → Eliminar cuenta**, confirma el nombre y la contraseña de una cuenta de prueba. Verifica que desaparezcan sus datos locales y que otra cuenta conserve los suyos.
+7. Para comprobar cuentas entre dispositivos, inicia `py .\server.py`, registra un usuario y contraseña, y entra con esas mismas credenciales desde otro navegador. Intenta registrar el mismo nombre con mayúsculas distintas y confirma que el servidor lo rechace.
+8. Cambia la contraseña de una cuenta del servidor y comprueba que puedas entrar con la nueva clave desde otro navegador.
+9. Elimina una cuenta de prueba en el servidor e intenta iniciar sesión de nuevo; la cuenta debe haber sido eliminada sin afectar a las demás.
+10. Confirma que **Continuar como invitado/local** abre un espacio independiente de las cuentas; los datos locales no aparecerán en otro navegador o dispositivo.
+
+### Verificación de esta revisión
+
+- `python -m py_compile .\server.py`: correcto.
+- Se ejecutaron 18 comprobaciones de integración de la API con una base SQLite temporal: registro, inicio y rechazo de credenciales, unicidad sin distinguir mayúsculas, aislamiento y persistencia de datos, cambio de contraseña, eliminación de cuenta y cierre de sesión.
+- En el navegador integrado se verificaron el registro e inicio de sesión local, la persistencia de una nota tras recargar, el aislamiento entre dos cuentas, el modo invitado y las opciones de cuenta. También se probaron el cambio de contraseña y la eliminación local de las cuentas de prueba.
+- Se corrigió el manejador de navegación lateral para que solo procese enlaces; el botón **Mi cuenta** ya no provoca una excepción de JavaScript.
+- Se añadieron las propiedades estándar `line-clamp` junto con las variantes WebKit existentes.
+- Se eliminó el ancho mínimo fijo del documento que provocaba desbordamiento horizontal en pantallas estrechas. También se apiló el panel del dashboard hasta 900 px y se mantuvieron los cinco accesos en una fila en la navegación móvil. Se comprobó el ancho del documento en el panel, notas, proyectos y horario a 320, 360, 390, 600, 768, 1024, 1366 y 1920 px.
+- El entorno dispone de Python 3.15.2, pero no de Node.js ni Docker; por eso no se ejecutaron `node --check` ni pruebas Playwright. La interfaz se ejercitó en el navegador integrado y la API se probó con la biblioteca estándar de Python. El proyecto aún no incluye una suite automatizada permanente.
 
 Para comprobar la sintaxis del servidor:
 
@@ -160,7 +182,7 @@ El proyecto no incluye actualmente una suite de pruebas automatizada.
 - Los adjuntos son locales al navegador y no se sincronizan entre dispositivos.
 - No existe recuperación de contraseña por correo.
 - La ejecución de fragmentos de código está desactivada.
-- Si la API no está disponible, se puede continuar como invitado/local; las cuentas con usuario único y contraseña requieren el servidor. Si la API falla después de iniciar una sesión autenticada, los cambios se conservan en el navegador y la interfaz informa que no se pudieron sincronizar.
+- Si la API no está disponible, las cuentas locales y el invitado solo están disponibles en ese navegador; para sincronizar entre dispositivos se requiere el servidor.
 
 ## Licencia
 

@@ -10,7 +10,8 @@
   const STORAGE_KEY = accountStorageKey("notes", accountUsername);
   const PROJECTS_KEY = accountStorageKey("projects", accountUsername);
   const STREAK_KEY = accountStorageKey("progress", accountUsername);
-  const ATTACHMENTS_DB_NAME = window.blockgramAttachmentDBName || "blockgramAttachments";
+  const ATTACHMENTS_DB_NAME = window.blockgramAttachmentDBName ||
+    accountStorageKey("attachments", accountUsername);
   const ATTACHMENTS_STORE_NAME = "noteAttachments";
   const MAX_SYNC_REQUEST_BYTES = 2 * 1024 * 1024;
   const MAX_ATTACHMENT_SIZE = 20 * 1024 * 1024;
@@ -178,6 +179,29 @@
     if (syncConflict) return Promise.reject(new Error("Resuelve el conflicto de sincronización antes de cerrar sesión."));
     if (accountMismatch) return Promise.reject(new Error("Recarga la página para usar la cuenta activa."));
     return syncAccountData();
+  };
+  window.blockgramStopAccountAutosave = () => {
+    window.clearTimeout(saveTimeout);
+    window.clearTimeout(remoteSyncTimeout);
+    noteDirty = false;
+  };
+  window.blockgramDeleteAccountAttachments = async () => {
+    if (!window.indexedDB) return;
+    if (attachmentDBPromise) {
+      const database = await attachmentDBPromise;
+      database.close();
+      attachmentDBPromise = null;
+    }
+    await new Promise((resolve, reject) => {
+      const request = window.indexedDB.deleteDatabase(ATTACHMENTS_DB_NAME);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(
+        request.error || new Error("No se pudieron eliminar los adjuntos de esta cuenta.")
+      );
+      request.onblocked = () => reject(
+        new Error("Cierra las otras pestañas de Blockgram para eliminar los adjuntos de esta cuenta.")
+      );
+    });
   };
 
   const setConflictButtonsDisabled = (disabled) => {
@@ -1868,7 +1892,7 @@
     const showNotes = view === "notes";
     if (!showNotes) flushSave();
     const activeHref = showNotes ? "#notas" : view === "projects" ? "#projectWorkspace" : `#${target || "inicio"}`;
-    document.querySelectorAll(".side-nav .nav-link").forEach((link) => {
+    document.querySelectorAll(".side-nav a.nav-link").forEach((link) => {
       link.classList.toggle("active", link.getAttribute("href") === activeHref);
     });
     const destination = showNotes
@@ -1932,7 +1956,7 @@
     }
   });
 
-  document.querySelectorAll(".side-nav .nav-link").forEach((link) => {
+  document.querySelectorAll(".side-nav a.nav-link").forEach((link) => {
     link.addEventListener("click", (event) => {
       event.preventDefault();
       const href = link.getAttribute("href").slice(1);
